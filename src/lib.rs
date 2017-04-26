@@ -37,7 +37,7 @@ impl NullData {
         if data.len() > 80 {
             panic!("data length over 80 bytes")    
         }
-        NullData { data: data.clone() }
+        Self { data: data.clone() }
     }
     
     pub fn to_script(&self) -> Script {
@@ -73,7 +73,7 @@ impl NullData {
         let mut data = Vec::new();
         data.extend_from_slice(data_slice);
         
-        NullData::new(&data)
+        Self::new(&data)
     }
 }
 
@@ -91,7 +91,7 @@ impl NullDataOutput {
         if value > max_money(Network::Bitcoin) {
             panic!("invalid amount of value")
         }
-        NullDataOutput {
+        Self {
             data: data.clone(),
             value: value,
         }
@@ -114,7 +114,7 @@ impl NullDataOutput {
         let script = output.clone().script_pubkey;
         let nulldata = NullData::from_script(&script);
         let data = nulldata.data.clone();
-        NullDataOutput {
+        Self {
             data: data,
             value: value,
         }
@@ -140,16 +140,16 @@ pub fn pkhash(public_key: &PublicKey) -> Vec<u8> {
 }
 
 #[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Debug)]
-pub struct P2PKH {
+pub struct P2PKHScriptPubkey {
     public_key_hash: Vec<u8>,
 }
 
-impl P2PKH {
+impl P2PKHScriptPubkey {
     pub fn new(public_key_hash: &Vec<u8>) -> Self {
         if public_key_hash.len() != 20 {
             panic!("invalid hash len")
         }
-        P2PKH { public_key_hash: public_key_hash.clone() }
+        Self { public_key_hash: public_key_hash.clone() }
     }
    
     pub fn from_public_key(public_key: &PublicKey) -> Self {
@@ -209,7 +209,7 @@ impl P2PKH {
             panic!("invalid op-code")
         }
 
-        P2PKH { public_key_hash: hash_slice.to_vec() }
+        Self { public_key_hash: hash_slice.to_vec() }
     }
 }
 
@@ -225,18 +225,18 @@ impl P2PKHOutput {
         if value > max_money(Network::Bitcoin) {
             panic!("invalid amount of value")
         }
-        P2PKHOutput {
+        Self {
             public_key_hash: public_key_hash,
             value: value,
         }
     }
     
     pub fn to_output(&self) -> Output {
-        let p2pkh = P2PKH::new(&self.public_key_hash);
-        let script = p2pkh.to_script();
+        let p2pkh_spk = P2PKHScriptPubkey::new(&self.public_key_hash);
+        let script_pubkey = p2pkh_spk.to_script();
         Output {
             value: self.value,
-            script_pubkey: script,
+            script_pubkey: script_pubkey,
         }
     }
 
@@ -245,37 +245,23 @@ impl P2PKHOutput {
         if value > max_money(Network::Bitcoin) {
             panic!("invalid amount of value")
         }
-        let script = output.clone().script_pubkey;
-        let p2pkh = P2PKH::from_script(&script);
-        let public_key_hash = p2pkh.public_key_hash;
-        P2PKHOutput {
+        let script_pubkey = output.clone().script_pubkey;
+        let p2pkh_spk = P2PKHScriptPubkey::from_script(&script_pubkey);
+        let public_key_hash = p2pkh_spk.public_key_hash;
+        Self {
             public_key_hash: public_key_hash,
             value: value,
         }
     }
 }
 
-/* NB: just a reference
-fn sighash() {}
 
-fn parse_sighash_input() {}
 
-fn multisig_redeem() {}
 
-fn parse_multisig_redeem_output() {}
 
-fn multisig_sig() {}
 
-fn parse_multisig_sig_input() {}
 
-fn deposit_tx() {}
 
-fn parse_deposit_tx() {}
-
-fn withdraw_tx() {}
-
-fn parse_withdraw_tx() {}
-*/
 
 
 #[cfg(test)]
@@ -284,7 +270,7 @@ mod tests {
     use bitcoin::blockdata::constants::max_money;
     use super::generate_keypair;
     use super::{ NullData, NullDataOutput };
-    use super::{ P2PKH, P2PKHOutput };
+    use super::{ P2PKHScriptPubkey, P2PKHOutput };
 
     #[test]
     fn nulldata_succ() {
@@ -327,10 +313,10 @@ mod tests {
     #[test]
     fn p2pkh_succ() {
         let (_, pk) = generate_keypair();
-        let p2pkh_1 = P2PKH::from_public_key(&pk);
-        let script = p2pkh_1.to_script();
-        let p2pkh_2 = P2PKH::from_script(&script);
-        assert_eq!(p2pkh_1, p2pkh_2);
+        let p2pkh_spk_1 = P2PKHScriptPubkey::from_public_key(&pk);
+        let script_pubkey = p2pkh_spk_1.to_script();
+        let p2pkh_spk_2 = P2PKHScriptPubkey::from_script(&script_pubkey);
+        assert_eq!(p2pkh_spk_1, p2pkh_spk_2);
     }
 
     #[test]
