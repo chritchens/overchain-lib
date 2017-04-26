@@ -22,6 +22,12 @@ use secp256k1::key::{ SecretKey, PublicKey };
 use secp256k1::Signature;
 use rand::{ thread_rng, Rng };
 
+pub fn generate_keypair() -> (SecretKey, PublicKey) {
+    let mut ctx = Secp256k1::new();
+    let mut rng = thread_rng();
+    ctx.generate_keypair(&mut rng).unwrap()
+} 
+
 #[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Debug)]
 pub struct NullData {
     data: Vec<u8>,
@@ -49,10 +55,11 @@ impl NullData {
         
         let s_vec = s.clone().into_vec();
         let nulldata = s_vec[0].clone();
-        if !nulldata == OpCodes::OP_RETURN as u8 {
+        if nulldata != OpCodes::OP_RETURN as u8 {
             panic!("invalid op-code")
         }
-        
+       
+        // TODO: check bytes length given op_pushbytes used
         let op_pushbyte = s_vec[1].clone();
         if op_pushbyte < OpCodes::OP_PUSHBYTES_0 as u8 ||
             op_pushbyte > OpCodes::OP_PUSHBYTES_75 as u8
@@ -120,7 +127,7 @@ pub fn hash160(data: &Vec<u8>) -> Vec<u8> {
     let mut v = Vec::new();
     let h160 = Hash160::from_data(&data.as_slice());
     for i in 0..20 {
-        v[i] = h160[i];
+        v.push(h160[i]);
     }
     v
 }
@@ -161,32 +168,38 @@ impl P2PKH {
         
         let s_vec = s.clone().into_vec();
 
-        if s_vec.len() != 24 {
+        if s_vec.len() != 25 {
             panic!("invalid script length")
         }
 
         let op_dup = s_vec[0].clone();
-        if !op_dup == OpCodes::OP_DUP as u8 {
+        if op_dup != OpCodes::OP_DUP as u8 {
             panic!("invalid op-code")
         }
 
         let op_hash160 = s_vec[1].clone();
-        if !op_hash160 == OpCodes::OP_HASH160 as u8 {
+        if op_hash160 != OpCodes::OP_HASH160 as u8 {
+            panic!("invalid op-code")
+        }
+
+        let op_pushbytes = s_vec[2].clone();
+        if op_pushbytes != OpCodes::OP_PUSHBYTES_20 as u8 {
+
             panic!("invalid op-code")
         }
         
-        let hash_slice = &s_vec[2..22];
+        let hash_slice = &s_vec[3..23];
         if hash_slice.len() != 20 {
             panic!("invalid hash length")
         }
 
-        let op_equalverify = s_vec[22].clone();
-        if !op_equalverify == OpCodes::OP_EQUALVERIFY as u8 {
+        let op_equalverify = s_vec[23].clone();
+        if op_equalverify != OpCodes::OP_EQUALVERIFY as u8 {
             panic!("invalid op-code")
         }
 
-        let op_checksig = s_vec[23].clone();
-        if !op_checksig == OpCodes::OP_CHECKSIG as u8 {
+        let op_checksig = s_vec[24].clone();
+        if op_checksig != OpCodes::OP_CHECKSIG as u8 {
             panic!("invalid op-code")
         }
 
@@ -222,19 +235,16 @@ mod tests {
     use bitcoin::blockdata::script::Script;
     use secp256k1::{ Secp256k1, Signature };
     use secp256k1::key::{ PublicKey, SecretKey };
+    use super::{ generate_keypair };
     use super::{ NullData, NullDataOutput };
     use super::{ P2PKH };
 
     #[test]
     fn nulldata_succ() {
         let data = "blablabla".to_string();
-        println!("\ndata: {}\n", data);
         let nulldata = NullData::new(&data.into_bytes());
-        println!("\nnulldata: {:?}\n", nulldata);
         let script = nulldata.to_script();
-        println!("\nscript: {}\n", script);
         let nulldata_2 = NullData::from_script(&script);
-        println!("\nnulldata_2: {:?}\n", nulldata_2);
         assert_eq!(nulldata, nulldata_2);
     }
 
@@ -244,22 +254,17 @@ mod tests {
         let data = "blablablabalbalbalsdfdsfdsfdslfjhdsafsd\
                     jfdsfkadshfkjsaadfhsljfahslkfdjashldkfja\
                     shlfk".to_string();
-        println!("\ndata: {}\n", data);
         NullData::new(&data.into_bytes());
     }
 
     #[test]
     fn nulldata_output_succ() {
         let data = "blablabla".to_string();
-        println!("\ndata: {}\n", data);
         let data_bin = data.into_bytes();
         let nulldata = NullData::new(&data_bin);
-        println!("\nnulldata: {:?}\n", nulldata);
         let script = nulldata.to_script();
-        println!("\nscript: {}\n", script);
         let satoshis = 100_000_000;
         let nulldata_output_1 = NullDataOutput::new(&data_bin, satoshis);
-        println!("\nnulldata_output_1: {:?}\n", nulldata_output_1);
         let output = nulldata_output_1.to_output();
         let nulldata_output_2 = NullDataOutput::from_output(&output);
         assert_eq!(nulldata_output_1, nulldata_output_2);
@@ -269,28 +274,20 @@ mod tests {
     #[should_panic]
     fn nulldata_output_too_much_satoshis_fail() {
         let data = "blablabla".to_string();
-        println!("\ndata: {}\n", data);
         let data_bin = data.into_bytes();
         let nulldata = NullData::new(&data_bin);
-        println!("\nnulldata: {:?}\n", nulldata);
         let script = nulldata.to_script();
-        println!("\nscript: {}\n", script);
         let satoshis = max_money(Network::Bitcoin) + 1;
         NullDataOutput::new(&data_bin, satoshis);
     }
     
     #[test]
     fn p2pkh_succ() {
-        /*
-        let p2pkh = P2PKH::new(&public_key);
-        println!("\np2pkh: {:?}\n", p2pkh);
+        let (sk, pk) = generate_keypair();
+        let p2pkh = P2PKH::new(&pk);
         let script = p2pkh.to_script();
-        println!("\nscript: {}\n", script);
         let p2pkh_2 = P2PKH::from_script(&script);
-        println!("\np2pkh_2: {:?}\n", p2pkh_2);
         assert_eq!(p2pkh, p2pkh_2);
-        */
-        assert!(true)
     }
 
     #[test]
