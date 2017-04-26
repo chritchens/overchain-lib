@@ -59,7 +59,6 @@ impl NullData {
             panic!("invalid op-code")
         }
        
-        // TODO: check bytes length given op_pushbytes used
         let op_pushbyte = s_vec[1].clone();
         if op_pushbyte < OpCodes::OP_PUSHBYTES_0 as u8 ||
             op_pushbyte > OpCodes::OP_PUSHBYTES_75 as u8
@@ -68,7 +67,7 @@ impl NullData {
         }
         
         let data_slice = &s_vec[2..];
-        if data_slice.len() > 75 {
+        if data_slice.len() != op_pushbyte as usize {
             panic!("invalid data length")
         }
        
