@@ -206,6 +206,7 @@ impl P2PKH {
     }
 }
 
+/* NB: just a reference
 fn sighash() {}
 
 fn parse_sighash_input() {}
@@ -225,6 +226,7 @@ fn parse_deposit_tx() {}
 fn withdraw_tx() {}
 
 fn parse_withdraw_tx() {}
+*/
 
 
 #[cfg(test)]
