@@ -10,18 +10,14 @@ extern crate serde;
 #[macro_use] extern crate serde_derive;
 
 use bitcoin::util::hash::Hash160;
-use bitcoin::network::constants::Network;
-use bitcoin::blockdata::constants::max_money;
 use bitcoin::blockdata::opcodes::All as OpCodes;
 use bitcoin::blockdata::script::Script;
 use bitcoin::blockdata::script::Builder as ScriptBuilder;
-use bitcoin::blockdata::transaction::TxIn as Input;
-use bitcoin::blockdata::transaction::TxOut as Output;
-use bitcoin::blockdata::transaction::Transaction;
 use bitcoin::blockdata::transaction::SigHashType;
 
 use secp256k1::Secp256k1;
 use secp256k1::{ Message, Signature };
+use secp256k1::constants::MESSAGE_SIZE;
 use secp256k1::key::{ SecretKey, PublicKey };
 use rand::{ thread_rng, Rng };
 
@@ -47,9 +43,13 @@ pub fn generate_keypair() -> (SecretKey, PublicKey) {
     ctx.generate_keypair(&mut rng).unwrap()
 }
 
-pub fn sign(message: &Message, secret_key: &SecretKey) -> Signature {
+pub fn sign(message: &Vec<u8>, secret_key: &SecretKey) -> Signature {
+    if message.len() != MESSAGE_SIZE {
+        panic!("invalid message length")
+    }
+    let msg = Message::from_slice(&message.as_slice()).unwrap();
     let ctx = generate_ctx();
-    ctx.sign(message, secret_key).unwrap()
+    ctx.sign(&msg, secret_key).unwrap()
 }
 
 #[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Debug)]
@@ -99,50 +99,6 @@ impl NullData {
         data.extend_from_slice(data_slice);
         
         Self::new(&data)
-    }
-}
-
-#[derive(Clone, Eq, PartialEq, Debug)]
-pub struct NullDataOutput {
-    data: Vec<u8>,
-    value: u64,
-}
-
-impl NullDataOutput {
-    pub fn new(data: &Vec<u8>, value: u64) -> Self {
-        if data.len() > 80 {
-            panic!("data length over 80 bytes")    
-        }
-        if value > max_money(Network::Bitcoin) {
-            panic!("invalid amount of value")
-        }
-        Self {
-            data: data.clone(),
-            value: value,
-        }
-    }
-    
-    pub fn to_output(&self) -> Output {
-        let nulldata = NullData::new(&self.data);
-        let script = nulldata.to_script();
-        Output {
-            value: self.value,
-            script_pubkey: script,
-        }
-    }
-
-    pub fn from_output(output: &Output) -> Self {
-        let value = output.value;
-        if value > max_money(Network::Bitcoin) {
-            panic!("invalid amount of value")
-        }
-        let script = output.clone().script_pubkey;
-        let nulldata = NullData::from_script(&script);
-        let data = nulldata.data.clone();
-        Self {
-            data: data,
-            value: value,
-        }
     }
 }
 
@@ -235,48 +191,6 @@ impl P2PKHScriptPubkey {
 }
 
 #[derive(Clone, Eq, PartialEq, Debug)]
-pub struct P2PKHOutput {
-    public_key_hash: Vec<u8>,
-    value: u64,
-}
-
-impl P2PKHOutput {
-    pub fn new(public_key: &PublicKey, value: u64) -> Self {
-        let public_key_hash = pkhash(public_key);
-        if value > max_money(Network::Bitcoin) {
-            panic!("invalid amount of value")
-        }
-        Self {
-            public_key_hash: public_key_hash,
-            value: value,
-        }
-    }
-    
-    pub fn to_output(&self) -> Output {
-        let p2pkh_spk = P2PKHScriptPubkey::new(&self.public_key_hash);
-        let script_pubkey = p2pkh_spk.to_script();
-        Output {
-            value: self.value,
-            script_pubkey: script_pubkey,
-        }
-    }
-
-    pub fn from_output(output: &Output) -> Self {
-        let value = output.value;
-        if value > max_money(Network::Bitcoin) {
-            panic!("invalid amount of value")
-        }
-        let script_pubkey = output.clone().script_pubkey;
-        let p2pkh_spk = P2PKHScriptPubkey::from_script(&script_pubkey);
-        let public_key_hash = p2pkh_spk.public_key_hash;
-        Self {
-            public_key_hash: public_key_hash,
-            value: value,
-        }
-    }
-}
-
-#[derive(Clone, Eq, PartialEq, Debug)]
 pub struct P2PKHScriptSig {
     public_key: PublicKey,
     signature: Signature,
@@ -354,62 +268,16 @@ impl P2PKHScriptSig {
     }
 }
 
-#[derive(Clone, Eq, PartialEq, Debug)]
-pub struct P2PKHInput {
-    public_key: PublicKey,
-    sighash_type: SigHashType,
-    input_index: u32,
-    tx: Transaction,
-}
-
-impl P2PKHInput {
-    pub fn new(
-        public_key: &PublicKey,
-        sighash_type: SigHashType,
-        input_index: u32,
-        tx: &Transaction,
-    ) -> Self {
-        Self {
-            public_key: public_key.clone(),
-            sighash_type: sighash_type,
-            input_index: input_index,
-            tx: tx.clone(),
-        }
-    }
-
-    pub fn to_input(&self, secret_key: &SecretKey) -> Input {
-        unreachable!()
-        /*
-        let signature = sign(secret_key, &msg);
-        let p2pkh_ss = P2PKHScriptSig::new(
-            &self.public_key,
-            &signature,
-            self.sighash_type,
-        );
-        */
-    }
-
-    pub fn from_input(input: &Input) -> Self {
-        unreachable!()
-    }
-}
-
-
 
 
 
 #[cfg(test)]
 mod tests {
-    use bitcoin::network::constants::Network;
-    use bitcoin::blockdata::constants::max_money;
     use bitcoin::blockdata::transaction::SigHashType;
-    use secp256k1::Message;
     use secp256k1::constants::MESSAGE_SIZE;
     use super::random_bytes;
     use super::{ generate_keypair, sign };
-    use super::{ NullData, NullDataOutput };
-    use super::{ P2PKHScriptPubkey, P2PKHOutput };
-    use super::P2PKHScriptSig;
+    use super::{ NullData, P2PKHScriptPubkey, P2PKHScriptSig };
 
     #[test]
     fn nulldata_succ() {
@@ -418,35 +286,6 @@ mod tests {
         let script = nulldata_1.to_script();
         let nulldata_2 = NullData::from_script(&script);
         assert_eq!(nulldata_1, nulldata_2);
-    }
-
-    #[test]
-    #[should_panic]
-    fn nulldata_too_much_data_fail() {
-        let data = "blablablabalbalbalsdfdsfdsfdslfjhdsafsd\
-                    jfdsfkadshfkjsaadfhsljfahslkfdjashldkfja\
-                    shlfk".to_string();
-        NullData::new(&data.into_bytes());
-    }
-
-    #[test]
-    fn nulldata_output_succ() {
-        let data = "blablabla".to_string();
-        let data_bin = data.into_bytes();
-        let satoshis = 100_000_000;
-        let nulldata_output_1 = NullDataOutput::new(&data_bin, satoshis);
-        let output = nulldata_output_1.to_output();
-        let nulldata_output_2 = NullDataOutput::from_output(&output);
-        assert_eq!(nulldata_output_1, nulldata_output_2);
-    }
-
-    #[test]
-    #[should_panic]
-    fn nulldata_output_too_much_satoshis_fail() {
-        let data = "blablabla".to_string();
-        let data_bin = data.into_bytes();
-        let satoshis = max_money(Network::Bitcoin) + 1;
-        NullDataOutput::new(&data_bin, satoshis);
     }
     
     #[test]
@@ -459,21 +298,10 @@ mod tests {
     }
 
     #[test]
-    fn p2pkh_output_succ() {
-        let (_, pk) = generate_keypair();
-        let value = 100_000_000;
-        let p2pkh_output_1 = P2PKHOutput::new(&pk, value);
-        let output = p2pkh_output_1.to_output();
-        let p2pkh_output_2 = P2PKHOutput::from_output(&output);
-        assert_eq!(p2pkh_output_1, p2pkh_output_2);
-    }
-
-    #[test]
     fn p2pkh_script_sig_succ() {
         let (sk, pk) = generate_keypair();
         let v = random_bytes(MESSAGE_SIZE);
-        let msg = Message::from_slice(&v.as_slice()).unwrap();
-        let sig = sign(&msg, &sk);
+        let sig = sign(&v, &sk);
         let p2pkh_ss_1 = P2PKHScriptSig::new(&pk, &sig, SigHashType::All);
         let script = p2pkh_ss_1.to_script();
         let p2pkh_ss_2 = P2PKHScriptSig::from_script(&script);
