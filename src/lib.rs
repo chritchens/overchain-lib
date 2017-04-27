@@ -279,6 +279,12 @@ impl MultisigScriptPubkey {
     pub fn new(public_keys: &Vec<Vec<u8>>, threshold: u32) -> Self {
         let public_keys_len = public_keys.len() as u32;
 
+        for pk_bin in public_keys {
+            if pk_bin.clone().len() != 33 {
+                panic!("invalid compressed public key lenght")
+            }
+        }
+
         if threshold > public_keys_len as u32 {
             panic!("invalid threshold")
         }
@@ -439,6 +445,24 @@ mod tests {
         let script = multisig_sp_1.to_script();
         let multisig_sp_2 = MultisigScriptPubkey::from_script(&script);
         assert_eq!(multisig_sp_1, multisig_sp_2)
+    }
+
+    #[test]
+    #[should_panic]
+    fn multisig_pubkey_invalid_pubkey_fail() {
+        let mut public_keys: Vec<Vec<u8>> = Vec::new();
+        let ctx = generate_ctx();
+        for _ in 0..10 {
+            let (_, pk) = generate_keypair();
+            let pk_bin = pk.serialize_vec(&ctx, true).to_vec();
+            public_keys.push(pk_bin);
+        }
+        public_keys.push(random_bytes(34));
+        let threshold = 6;
+        MultisigScriptPubkey::new(
+            &public_keys,
+            threshold,
+        );
     }
 
     #[test]
