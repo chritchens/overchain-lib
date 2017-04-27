@@ -82,6 +82,11 @@ Every XBTC wallet owner can send and receive XBitcoin coins. Every XBitcoin sato
 according to its fees.
 
 
+### XBitcoin block selection and rewards ###
+
+In XBitcoin nodes which make it to have their blocks added to the blockchain get rewarded with the fees collected from deposits and transactions. Those fees will be spendable only after a period of 100 blocks. The nodes which can have their blocks selected are those which can prove to own Bitcoin funds above a certain minimum value dinamically set in order to ensure a block confirmation time of 6 minutes. Those who wins are those with the higher funds, then stake. This makes of XBitcoin a proof-of-stake currency backed by Bitcoin.
+
+
 ## Code ##
 
 
