@@ -15,7 +15,9 @@ use bitcoin::blockdata::constants::max_money;
 use bitcoin::blockdata::opcodes::All as OpCodes;
 use bitcoin::blockdata::script::Script;
 use bitcoin::blockdata::script::Builder as ScriptBuilder;
+use bitcoin::blockdata::transaction::TxIn as Input;
 use bitcoin::blockdata::transaction::TxOut as Output;
+use bitcoin::blockdata::transaction::Transaction;
 use bitcoin::blockdata::transaction::SigHashType;
 
 use secp256k1::Secp256k1;
