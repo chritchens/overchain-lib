@@ -86,6 +86,8 @@ according to its fees.
 
 In XBitcoin nodes which make it to have their blocks added to the blockchain get rewarded with the fees collected from deposits and transactions. Those fees will be spendable only after a period of 100 blocks. The nodes which can have their blocks selected are those which can prove to own Bitcoin funds above a certain minimum value dinamically set in order to ensure a block confirmation time of 6 minutes. Those who wins are those with the higher funds, then stake. This makes of XBitcoin a proof-of-stake currency backed by Bitcoin.
 
+This is done in order to enforce XBitcoin notaries to stick with the rules of the game, otherwise malicious notaries would not have any disincentive to enter in the network in order to take more than 50% of the processing power and do not register some (if not all) the withdraws occurring.
+
 
 ## Code ##
 
