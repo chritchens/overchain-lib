@@ -16,16 +16,39 @@ use bitcoin::blockdata::opcodes::All as OpCodes;
 use bitcoin::blockdata::script::Script;
 use bitcoin::blockdata::script::Builder as ScriptBuilder;
 use bitcoin::blockdata::transaction::TxOut as Output;
+use bitcoin::blockdata::transaction::SigHashType;
 
 use secp256k1::Secp256k1;
+use secp256k1::{ Message, Signature };
 use secp256k1::key::{ SecretKey, PublicKey };
-use rand::thread_rng;
+use rand::{ thread_rng, Rng };
+
+pub fn random_bytes(len: usize) -> Vec<u8> {
+    let mut v = Vec::new();
+    for _ in 0..len {
+        v.push(0u8);
+    }
+    thread_rng().fill_bytes(&mut v);
+    v
+}
+
+pub fn generate_ctx() -> Secp256k1 {
+    let mut ctx = Secp256k1::new();
+    let mut rng = thread_rng();
+    ctx.randomize(&mut rng);
+    ctx
+}
 
 pub fn generate_keypair() -> (SecretKey, PublicKey) {
-    let ctx = Secp256k1::new();
+    let ctx = generate_ctx();
     let mut rng = thread_rng();
     ctx.generate_keypair(&mut rng).unwrap()
-} 
+}
+
+pub fn sign(message: &Message, secret_key: &SecretKey) -> Signature {
+    let ctx = generate_ctx();
+    ctx.sign(message, secret_key).unwrap()
+}
 
 #[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Debug)]
 pub struct NullData {
@@ -131,9 +154,7 @@ pub fn hash160(data: &Vec<u8>) -> Vec<u8> {
 }
 
 pub fn pkhash(public_key: &PublicKey) -> Vec<u8> {
-    let mut ctx = Secp256k1::new();
-    let mut rng = thread_rng();
-    ctx.randomize(&mut rng);
+    let ctx = generate_ctx();
     // NB: pk get compressed to 33 bytes
     let pk_bin = public_key.serialize_vec(&ctx, true).to_vec();
     hash160(&pk_bin)
@@ -190,7 +211,6 @@ impl P2PKHScriptPubkey {
 
         let op_pushbytes = s_vec[2].clone();
         if op_pushbytes != OpCodes::OP_PUSHBYTES_20 as u8 {
-
             panic!("invalid op-code")
         }
         
@@ -255,10 +275,131 @@ impl P2PKHOutput {
     }
 }
 
+#[derive(Clone, Eq, PartialEq, Debug)]
+pub struct P2PKHScriptSig {
+    public_key: PublicKey,
+    signature: Signature,
+    sighash_type: SigHashType,
+}
 
+impl P2PKHScriptSig {
+    pub fn new(
+        public_key: &PublicKey,
+        signature: &Signature,
+        sighash_type: SigHashType,
+    ) -> Self {
+        Self {
+            public_key: public_key.clone(),
+            signature: signature.clone(),
+            sighash_type: sighash_type,
+        }
+    }
+    
+    pub fn to_script(&self) -> Script {
+        let ctx = generate_ctx();
+        let pk_bin = self.public_key.serialize_vec(&ctx, true).to_vec();
+        let mut sig_bin = self.signature.serialize_der(&ctx);
+        sig_bin.push(self.sighash_type as u8);
+        // source: add_push_sig in https://github.com/ElementsProject/lightning/blob/master/bitcoin/script.c
+        sig_bin.push(self.sighash_type as u8);
+        ScriptBuilder::new()
+            .push_slice(sig_bin.as_slice())
+            .push_slice(pk_bin.as_slice())
+            .into_script()
+    }
 
+    pub fn from_script(s: &Script) -> Self { 
+        if s.is_provably_unspendable() {
+            panic!("unspendable script")
+        }
+        
+        let s_vec = s.clone().into_vec();
 
+        // op_pushbyte_71/72/73: 1 byte
+        // der signature: 70, 71 or 72 bytes
+        // sighashtype: 1 byte
+        // op_pushbyte_33: 1 byte
+        // compressed public key: 33 bytes
+        // length: 106-108
+        let s_vec_len = s_vec.len();
+        if s_vec_len < 106 || s_vec_len > 108  {
+            panic!("invalid script length")
+        }
 
+        let op_pushbytes_sig = s_vec[0];
+        let op_pushbytes_sig_u8 = op_pushbytes_sig as u8;
+        if op_pushbytes_sig_u8 < 71 || op_pushbytes_sig_u8 > 73 {
+            panic!("invalid op-code")
+        }
+
+        let data = s_vec[1..op_pushbytes_sig_u8 as usize].to_vec();
+        let data_len = data.len();
+        let sig_bin = data[0..data_len-1].to_vec();
+
+        let sighash_type = SigHashType::from_u32(s_vec[data[data_len-1] as usize] as u32);
+        
+
+        let op_pushbytes_pk = s_vec[(op_pushbytes_sig_u8+1) as usize];
+        if op_pushbytes_pk != OpCodes::OP_PUSHBYTES_33 as u8 {
+            panic!("invalid op-code")
+        }
+
+        let pk_bin_from = (op_pushbytes_sig_u8+2) as usize;
+        let pk_bin_to = (pk_bin_from + 33) as usize;
+        let pk_bin = s_vec[pk_bin_from..pk_bin_to].to_vec();
+
+        let ctx = generate_ctx();
+        let public_key = PublicKey::from_slice(&ctx, &pk_bin.as_slice()).unwrap();
+        let signature = Signature::from_der(&ctx, &sig_bin.as_slice()).unwrap();
+
+        Self {
+            public_key: public_key,
+            signature: signature,
+            sighash_type: sighash_type,
+        }
+    }
+}
+
+#[derive(Clone, Eq, PartialEq, Debug)]
+pub struct P2PKHInput {
+    public_key: PublicKey,
+    sighash_type: SigHashType,
+    input_index: u32,
+    tx: Transaction,
+}
+
+impl P2PKHInput {
+    pub fn new(
+        public_key: &PublicKey,
+        sighash_type: SigHashType,
+        input_index: u32,
+        tx: &Transaction,
+    ) -> Self {
+        Self {
+            public_key: public_key.clone(),
+            sighash_type: sighash_type,
+            input_index: input_index,
+            tx: tx.clone(),
+        }
+    }
+
+    pub fn to_input(&self, secret_key: &SecretKey) -> Input {
+        unreachable!()
+        /*
+        let signature = sign(secret_key, &msg);
+        let p2pkh_ss = P2PKHScriptSig::new(
+            &self.public_key,
+            &signature,
+            self.sighash_type,
+        );
+        // TODO
+        */
+    }
+
+    pub fn from_input(input: &Input) -> Self {
+        unreachable!()
+    }
+}
 
 
 
@@ -268,9 +409,14 @@ impl P2PKHOutput {
 mod tests {
     use bitcoin::network::constants::Network;
     use bitcoin::blockdata::constants::max_money;
-    use super::generate_keypair;
+    use bitcoin::blockdata::transaction::SigHashType;
+    use secp256k1::Message;
+    use secp256k1::constants::MESSAGE_SIZE;
+    use super::random_bytes;
+    use super::{ generate_keypair, sign };
     use super::{ NullData, NullDataOutput };
     use super::{ P2PKHScriptPubkey, P2PKHOutput };
+    use super::P2PKHScriptSig;
 
     #[test]
     fn nulldata_succ() {
@@ -311,7 +457,7 @@ mod tests {
     }
     
     #[test]
-    fn p2pkh_succ() {
+    fn p2pkh_script_pubkey_succ() {
         let (_, pk) = generate_keypair();
         let p2pkh_spk_1 = P2PKHScriptPubkey::from_public_key(&pk);
         let script_pubkey = p2pkh_spk_1.to_script();
@@ -330,8 +476,15 @@ mod tests {
     }
 
     #[test]
-    #[should_panic]
-    fn p2pkh_output_fail() {
-        assert!(false)
+    fn p2pkh_script_sig_succ() {
+        let (sk, pk) = generate_keypair();
+        let v = random_bytes(MESSAGE_SIZE);
+        let msg = Message::from_slice(&v.as_slice()).unwrap();
+        let sig = sign(&msg, &sk);
+        let p2pkh_ss_1 = P2PKHScriptSig::new(&pk, &sig, SigHashType::All);
+        let script = p2pkh_ss_1.to_script();
+        let p2pkh_ss_2 = P2PKHScriptSig::from_script(&script);
+        assert_eq!(p2pkh_ss_1, p2pkh_ss_2);
     }
+
 }
