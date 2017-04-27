@@ -157,7 +157,6 @@ pub fn hash160(data: &Vec<u8>) -> Vec<u8> {
 
 pub fn pkhash(public_key: &PublicKey) -> Vec<u8> {
     let ctx = generate_ctx();
-    // NB: pk get compressed to 33 bytes
     let pk_bin = public_key.serialize_vec(&ctx, true).to_vec();
     hash160(&pk_bin)
 }
@@ -302,7 +301,6 @@ impl P2PKHScriptSig {
         let pk_bin = self.public_key.serialize_vec(&ctx, true).to_vec();
         let mut sig_bin = self.signature.serialize_der(&ctx);
         sig_bin.push(self.sighash_type as u8);
-        // source: add_push_sig in https://github.com/ElementsProject/lightning/blob/master/bitcoin/script.c
         sig_bin.push(self.sighash_type as u8);
         ScriptBuilder::new()
             .push_slice(sig_bin.as_slice())
@@ -317,12 +315,6 @@ impl P2PKHScriptSig {
         
         let s_vec = s.clone().into_vec();
 
-        // op_pushbyte_71/72/73: 1 byte
-        // der signature: 70, 71 or 72 bytes
-        // sighashtype: 1 byte
-        // op_pushbyte_33: 1 byte
-        // compressed public key: 33 bytes
-        // length: 106-108
         let s_vec_len = s_vec.len();
         if s_vec_len < 106 || s_vec_len > 108  {
             panic!("invalid script length")
@@ -394,7 +386,6 @@ impl P2PKHInput {
             &signature,
             self.sighash_type,
         );
-        // TODO
         */
     }
 
