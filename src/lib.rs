@@ -269,15 +269,129 @@ impl P2PKHScriptSig {
 }
 
 
+#[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Debug)]
+pub struct MultisigScriptPubkey {
+    public_keys: Vec<Vec<u8>>,
+    threshold: u32,
+}
+
+impl MultisigScriptPubkey {
+    pub fn new(public_keys: &Vec<Vec<u8>>, threshold: u32) -> Self {
+        let public_keys_len = public_keys.len() as u32;
+
+        if threshold > public_keys_len as u32 {
+            panic!("invalid threshold")
+        }
+        if threshold == 0 || threshold > 16 {
+            panic!("invalid threshold")
+        }
+        Self {
+            public_keys: public_keys.clone(),
+            threshold: threshold,
+        }
+    }
+    
+    pub fn to_script(&self) -> Script {
+        let public_keys_len = self.public_keys.len();
+
+        let m_opcode_u32 = ((OpCodes::OP_PUSHNUM_1 as u8) as u32) + self.threshold - 1;
+        let m_opcode = OpCodes::from(m_opcode_u32 as u8);
+        let n_opcode_u32 = ((OpCodes::OP_PUSHNUM_1 as u8) as u32) + (public_keys_len as u32) - 1;
+        let n_opcode = OpCodes::from(n_opcode_u32 as u8);
+
+        let mut script = ScriptBuilder::new().push_opcode(m_opcode);
+        
+        for pk in self.public_keys.clone() {
+            script = script.clone().push_slice(&pk.as_slice());
+        }
+        
+        script.push_opcode(n_opcode)
+            .push_opcode(OpCodes::OP_CHECKMULTISIG)
+            .into_script()
+    }
+
+    pub fn from_script(s: &Script) -> Self { 
+        if s.is_provably_unspendable() {
+            panic!("unspendable script")
+        }
+        
+        let s_vec = s.clone().into_vec();
+
+        let s_vec_len = s_vec.len();
+        // min: op_pushnum_1 op_pushbytes_33 <pubkey> op_pushnum_1 op_checkmultisig
+        //      which is 39 bytes
+        // max: op_pushnum_16 (op_pushbytes_33 <pubkey>)*16 op_pushnum_x op_checkmultisig
+        //      which is 531 bytes
+        if s_vec_len < 5 || s_vec_len > 531 {
+            panic!("invalid script length")
+        }
+
+        let op_m = s_vec[0].clone();
+        if op_m < OpCodes::OP_PUSHNUM_1 as u8 ||
+            op_m > OpCodes::OP_PUSHNUM_16 as u8
+        {
+            panic!("invalid op-code")
+        }
+
+        let threshold = ((op_m as u8) - (OpCodes::OP_PUSHNUM_1 as u8) + 1) as u32;
+
+        let op_n = s_vec[s_vec_len-2].clone();
+        if op_n < OpCodes::OP_PUSHNUM_1 as u8 ||
+            op_n > OpCodes::OP_PUSHNUM_16 as u8
+        {
+            panic!("invalid op-code")
+        }
+
+        let length = ((op_n as u8) - (OpCodes::OP_PUSHNUM_1 as u8) + 1) as u32;
+
+        if threshold > length {
+            panic!("invalid thresold")
+        }
+
+        if s_vec_len != (3 + length*34) as usize {
+            panic!("invalid length")
+        }
+
+        let op_checkmultisig = s_vec[s_vec_len-1].clone();
+        if op_checkmultisig != OpCodes::OP_CHECKMULTISIG as u8 {
+            panic!("invalid op-code")
+        }
+
+        let mut public_keys: Vec<Vec<u8>> = Vec::new();
+
+        let pks_bin = s_vec[1..(length*34+1) as usize].to_vec();
+
+        for i in 0..(length as usize) {
+            let start = i*34;
+            let stop = start + 34;
+            let data = pks_bin[start..stop].to_vec();
+            let op_pushbytes = data[0];
+            if op_pushbytes != OpCodes::OP_PUSHBYTES_33 as u8 {
+                panic!("invalid op-code")
+            }
+            let pk_bin = data[1..34].to_vec();
+            public_keys.push(pk_bin)
+        }
+
+        Self {
+            public_keys: public_keys,
+            threshold: threshold,
+        }
+    }
+}
 
 
 #[cfg(test)]
 mod tests {
+    use bitcoin::blockdata::opcodes::All as OpCodes;
+    use bitcoin::blockdata::script::Script;
     use bitcoin::blockdata::transaction::SigHashType;
     use secp256k1::constants::MESSAGE_SIZE;
     use super::random_bytes;
-    use super::{ generate_keypair, sign };
-    use super::{ NullData, P2PKHScriptPubkey, P2PKHScriptSig };
+    use super::{ generate_ctx, generate_keypair, sign };
+    use super::NullData;
+    use super::{ P2PKHScriptPubkey, P2PKHScriptSig };
+    use super::MultisigScriptPubkey;
 
     #[test]
     fn nulldata_succ() {
@@ -291,10 +405,10 @@ mod tests {
     #[test]
     fn p2pkh_script_pubkey_succ() {
         let (_, pk) = generate_keypair();
-        let p2pkh_spk_1 = P2PKHScriptPubkey::from_public_key(&pk);
-        let script_pubkey = p2pkh_spk_1.to_script();
-        let p2pkh_spk_2 = P2PKHScriptPubkey::from_script(&script_pubkey);
-        assert_eq!(p2pkh_spk_1, p2pkh_spk_2);
+        let p2pkh_sp_1 = P2PKHScriptPubkey::from_public_key(&pk);
+        let script_pubkey = p2pkh_sp_1.to_script();
+        let p2pkh_sp_2 = P2PKHScriptPubkey::from_script(&script_pubkey);
+        assert_eq!(p2pkh_sp_1, p2pkh_sp_2);
     }
 
     #[test]
@@ -308,4 +422,79 @@ mod tests {
         assert_eq!(p2pkh_ss_1, p2pkh_ss_2);
     }
 
+    #[test]
+    fn multisig_pubkey_succ() {
+        let mut public_keys: Vec<Vec<u8>> = Vec::new();
+        let ctx = generate_ctx();
+        for _ in 0..10 {
+            let (_, pk) = generate_keypair();
+            let pk_bin = pk.serialize_vec(&ctx, true).to_vec();
+            public_keys.push(pk_bin);
+        }
+        let threshold = 10;
+        let multisig_sp_1 = MultisigScriptPubkey::new(
+            &public_keys,
+            threshold,
+        );
+        let script = multisig_sp_1.to_script();
+        let multisig_sp_2 = MultisigScriptPubkey::from_script(&script);
+        assert_eq!(multisig_sp_1, multisig_sp_2)
+    }
+
+    #[test]
+    #[should_panic]
+    fn multisig_pubkey_threshold_zero_fail() {
+        let mut public_keys: Vec<Vec<u8>> = Vec::new();
+        let ctx = generate_ctx();
+        for _ in 0..10 {
+            let (_, pk) = generate_keypair();
+            let pk_bin = pk.serialize_vec(&ctx, true).to_vec();
+            public_keys.push(pk_bin);
+        }
+        let threshold = 0;
+        MultisigScriptPubkey::new(
+            &public_keys,
+            threshold,
+        );
+    }
+
+    #[test]
+    #[should_panic]
+    fn multisig_pubkey_threshold_overflow_fail() {
+        let mut public_keys: Vec<Vec<u8>> = Vec::new();
+        let ctx = generate_ctx();
+        for _ in 0..10 {
+            let (_, pk) = generate_keypair();
+            let pk_bin = pk.serialize_vec(&ctx, true).to_vec();
+            public_keys.push(pk_bin);
+        }
+        let threshold = 11;
+        MultisigScriptPubkey::new(
+            &public_keys,
+            threshold,
+        );
+    }
+
+    #[test]
+    #[should_panic]
+    fn multisig_pubkey_invalid_lenght_fail() {
+        let mut public_keys: Vec<Vec<u8>> = Vec::new();
+        let ctx = generate_ctx();
+        for _ in 0..10 {
+            let (_, pk) = generate_keypair();
+            let pk_bin = pk.serialize_vec(&ctx, true).to_vec();
+            public_keys.push(pk_bin);
+        }
+        let threshold = 10;
+        let multisig_sp_1 = MultisigScriptPubkey::new(
+            &public_keys,
+            threshold,
+        );
+        let mut script = multisig_sp_1.to_script();
+        let mut script_vec = script.into_vec();
+        let script_vec_len = script_vec.clone().len();
+        script_vec[script_vec_len-2] = OpCodes::OP_PUSHNUM_11 as u8;
+        script = Script::from(script_vec);
+        MultisigScriptPubkey::from_script(&script);
+    }
 }
