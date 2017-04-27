@@ -4,7 +4,7 @@
 ## Description ##
 
 
-Overchain is a protocol to build Bitcoin 2-way pegged decentralized sidechains.
+Overchain is a protocol to build Bitcoin 2-way pegged decentralized sidechains. So far I'd suggest the pegged sidechains to use a proof-of-stake on Bitcoin funds, in order for the system to be workable. This means that in those sidechains, nodes with the higher Bitcoin stake would have an higher chance to have their blocks added to the sidechain blockchain. In any case, I think it's sidechain dependant.
 
 
 ## How it works ##
