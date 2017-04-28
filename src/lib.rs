@@ -466,6 +466,23 @@ impl MultisigScriptSig {
 }
 
 
+#[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Debug)]
+pub struct DepositTransaction {}
+
+
+#[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Debug)]
+pub struct WithdrawTransaction {}
+
+
+pub struct Store {}
+
+
+pub struct Server {}
+
+
+pub struct Client {}
+
+
 #[cfg(test)]
 mod tests {
     use bitcoin::blockdata::opcodes::All as OpCodes;
