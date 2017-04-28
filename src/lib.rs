@@ -387,6 +387,85 @@ impl MultisigScriptPubkey {
 }
 
 
+#[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Debug)]
+pub struct MultisigScriptSig {
+    signatures: Vec<Vec<u8>>,
+}
+
+impl MultisigScriptSig {
+    pub fn new(signatures: &Vec<Vec<u8>>) -> Self {
+        for sig_bin in signatures.clone() {
+            if sig_bin.len() < 70 || sig_bin.len() > 72 {
+                panic!("invalid signature length")    
+            }
+        }
+        Self {
+            signatures: signatures.clone(),
+        }
+    }
+    
+    pub fn to_script(&self) -> Script {
+        let mut script = ScriptBuilder::new()
+            .push_opcode(OpCodes::OP_PUSHBYTES_0);
+        
+        for sig_bin in self.signatures.clone() {
+            script = script.clone().push_slice(&sig_bin.as_slice());
+        }
+        
+        script.into_script()
+    }
+
+    pub fn from_script(s: &Script) -> Self {
+        if s.is_provably_unspendable() {
+            panic!("unspendable script")
+        }
+        
+        let s_vec = s.clone().into_vec();
+
+        let s_vec_len = s_vec.len();
+        // min: op_0 op_pushbytes_70 <sig>
+        //      which is 72 bytes
+        // max: op_0 (op_pushbytes_72 <sig>)*16
+        //      which is 1153 bytes
+        if s_vec_len < 72 || s_vec_len > 1153 {
+            panic!("invalid script length")
+        }
+
+        let op_0 = s_vec[0].clone();
+        if op_0 != OpCodes::OP_PUSHBYTES_0 as u8 {
+            panic!("invalid op-code")
+        }
+
+        let mut signatures: Vec<Vec<u8>> = Vec::new();
+
+        let sigs_bin = s_vec[1..].to_vec();
+        let sigs_bin_len = sigs_bin.len();
+
+        let mut idx = 0;
+
+        while idx + 71 <= sigs_bin_len {
+            let op_pushbytes = sigs_bin[idx];
+            if op_pushbytes < OpCodes::OP_PUSHBYTES_70 as u8 ||
+                op_pushbytes > OpCodes::OP_PUSHBYTES_72 as u8
+            {
+                panic!("invalid op-code")
+            }
+
+            let op_pushbytes_usize = op_pushbytes as usize;
+        
+            let sig_bin = sigs_bin[idx+1..idx+op_pushbytes_usize+1].to_vec();
+            signatures.push(sig_bin);
+
+            idx = idx + op_pushbytes_usize + 1;
+        }
+
+        Self {
+            signatures: signatures,
+        }
+    }
+}
+
+
 #[cfg(test)]
 mod tests {
     use bitcoin::blockdata::opcodes::All as OpCodes;
@@ -397,7 +476,7 @@ mod tests {
     use super::{ generate_ctx, generate_keypair, sign };
     use super::NullData;
     use super::{ P2PKHScriptPubkey, P2PKHScriptSig };
-    use super::MultisigScriptPubkey;
+    use super::{ MultisigScriptPubkey, MultisigScriptSig };
 
     #[test]
     fn nulldata_succ() {
@@ -520,5 +599,44 @@ mod tests {
         script_vec[script_vec_len-2] = OpCodes::OP_PUSHNUM_11 as u8;
         script = Script::from(script_vec);
         MultisigScriptPubkey::from_script(&script);
+    }
+
+    #[test]
+    fn multisig_sig_succ() {
+        let mut signatures: Vec<Vec<u8>> = Vec::new();
+        for _ in 0..10 {
+            signatures.push(random_bytes(72));
+        }
+        let multisig_ss_1 = MultisigScriptSig::new(&signatures);
+        let script = multisig_ss_1.to_script();
+        let multisig_ss_2 = MultisigScriptSig::from_script(&script);
+        assert_eq!(multisig_ss_1, multisig_ss_2);
+    }
+
+    #[test]
+    #[should_panic]
+    fn multisig_sig_invalid_signature_fail() {
+        let mut signatures: Vec<Vec<u8>> = Vec::new();
+        for _ in 0..10 {
+            signatures.push(random_bytes(72));
+        }
+        signatures.push(random_bytes(69));
+        MultisigScriptSig::new(&signatures);
+    }
+
+    #[test]
+    #[should_panic]
+    fn multisig_sig_invalid_op_code_fail() {
+        let mut signatures: Vec<Vec<u8>> = Vec::new();
+        for _ in 0..10 {
+            signatures.push(random_bytes(72));
+        }
+        MultisigScriptSig::new(&signatures);
+        let multisig_ss_1 = MultisigScriptSig::new(&signatures);
+        let mut script = multisig_ss_1.to_script();
+        let mut script_vec = script.into_vec();
+        script_vec[0] = OpCodes::OP_PUSHBYTES_1 as u8;
+        script = Script::from(script_vec);
+        MultisigScriptSig::from_script(&script);
     }
 }
