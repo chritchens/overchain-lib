@@ -9,11 +9,15 @@ extern crate serde;
 #[allow(unused_imports)]
 #[macro_use] extern crate serde_derive;
 
-use bitcoin::util::hash::Hash160;
+use bitcoin::util::hash::{ Hash160, Sha256Hash };
 use bitcoin::blockdata::opcodes::All as OpCodes;
 use bitcoin::blockdata::script::Script;
 use bitcoin::blockdata::script::Builder as ScriptBuilder;
 use bitcoin::blockdata::transaction::SigHashType;
+use bitcoin::blockdata::transaction::TxIn as Input;
+use bitcoin::blockdata::transaction::TxOut as Output;
+use bitcoin::blockdata::transaction::TxOutRef as UnspentOutput;
+use bitcoin::blockdata::transaction::Transaction;
 
 use secp256k1::Secp256k1;
 use secp256k1::{ Message, Signature };
@@ -102,11 +106,20 @@ impl NullData {
     }
 }
 
+pub fn sha256(data: &Vec<u8>) -> Vec<u8> {
+    let mut v = Vec::new();
+    let digest = Sha256Hash::from_data(&data.as_slice());
+    for i in 0..20 {
+        v.push(digest[i]);
+    }
+    v
+}
+
 pub fn hash160(data: &Vec<u8>) -> Vec<u8> {
     let mut v = Vec::new();
-    let h160 = Hash160::from_data(&data.as_slice());
+    let digest = Hash160::from_data(&data.as_slice());
     for i in 0..20 {
-        v.push(h160[i]);
+        v.push(digest[i]);
     }
     v
 }
@@ -466,9 +479,64 @@ impl MultisigScriptSig {
 }
 
 
-#[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Debug)]
-pub struct DepositTransaction {}
+pub const PREFIX = "YBC";
+pub const VERSION = "0.0.1";
 
+
+/*
+    deposit transaction:
+        note (nulldata output):
+            nulldata: 80 bytes
+                prefix: 3 bytes
+                version: 3 bytes
+                sidechain: 3 bytes
+                sidechain_version: 3 bytes
+                threshold: 4 bytes
+                length: 4 bytes
+                public_keys_hash: 20 bytes
+                activation_time: 4 bytes
+                expiration_time: 4 bytes
+                coinbase: 4 bytes
+                amount: 4 bytes
+                data_length: 4 bytes
+                data_hash: 20 bytes
+            coinbase: varint
+        fund (multisig output):
+            script_sig: multisig script_pubkey
+            amount: varint
+        change (multisig output):
+            script_sig: multisig script_pubkey
+            amount: varint
+        fee: varint
+*/
+
+pub struct Note {
+    sidechain: String,
+    version: String,
+    wallet: MultisigScriptPubKey,
+    unspent_outputs: Vec<UnspentOutput>,
+    activation_time: u32,
+    expiration_time: u32,
+    coinbase: u32,
+    amount: u32,
+    data_hash: Sha256Hash,
+}
+
+pub struct P2PKHOutput {}
+
+pub struct P2PKHInput {}
+
+pub struct MultiSigOutput {}
+
+pub struct MultiSigInput {}
+
+#[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Debug)]
+pub struct DepositTransaction {
+    note: Note,
+    unspent_outputs: Vec<UnspentOutput>,
+    change: MultiSigOutput,
+    fee: u32,
+}
 
 #[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Debug)]
 pub struct WithdrawTransaction {}
