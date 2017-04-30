@@ -9,7 +9,7 @@ extern crate serde;
 #[allow(unused_imports)]
 #[macro_use] extern crate serde_derive;
 
-use bitcoin::util::hash::{ Hash160, Sha256Hash };
+use bitcoin::util::hash::{ Hash160, Sha256dHash };
 use bitcoin::blockdata::opcodes::All as OpCodes;
 use bitcoin::blockdata::script::Script;
 use bitcoin::blockdata::script::Builder as ScriptBuilder;
@@ -108,7 +108,7 @@ impl NullData {
 
 pub fn sha256(data: &Vec<u8>) -> Vec<u8> {
     let mut v = Vec::new();
-    let digest = Sha256Hash::from_data(&data.as_slice());
+    let digest = Sha256dHash::from_data(&data.as_slice());
     for i in 0..20 {
         v.push(digest[i]);
     }
@@ -479,8 +479,8 @@ impl MultisigScriptSig {
 }
 
 
-pub const PREFIX = "YBC";
-pub const VERSION = "0.0.1";
+pub const PREFIX: &str = "YBC";
+pub const VERSION: &str = "0.0.1";
 
 
 /*
@@ -510,24 +510,29 @@ pub const VERSION = "0.0.1";
         fee: varint
 */
 
+#[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Debug)]
 pub struct Note {
     sidechain: String,
     version: String,
-    wallet: MultisigScriptPubKey,
+    wallet: MultisigScriptPubkey,
     unspent_outputs: Vec<UnspentOutput>,
     activation_time: u32,
     expiration_time: u32,
     coinbase: u32,
     amount: u32,
-    data_hash: Sha256Hash,
+    data_hash: Sha256dHash,
 }
 
+#[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Debug)]
 pub struct P2PKHOutput {}
 
+#[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Debug)]
 pub struct P2PKHInput {}
 
+#[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Debug)]
 pub struct MultiSigOutput {}
 
+#[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Debug)]
 pub struct MultiSigInput {}
 
 #[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Debug)]
